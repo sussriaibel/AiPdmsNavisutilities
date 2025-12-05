@@ -264,34 +264,22 @@ namespace AiPdms.Navis.Utilities
                         {
                             ExportAttribute(e3DDBElementCollection.AllSitesAibel, attribLibrary, outputFileWithNumber);
                             var exportEnd = DateTime.UtcNow;
-
-                            // minutes with 2 decimals
-                            double durationMinutes = (exportEnd - exportStart).TotalMilliseconds / 60000.0;
-                            string durationStr = durationMinutes.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-                            // size in MB with 2 decimals
+                            double durationMs = (exportEnd - exportStart).TotalMilliseconds;
                             double sizeMb = File.Exists(outputFileWithNumber) ? new FileInfo(outputFileWithNumber).Length / 1024.0 / 1024.0 : 0.0;
-                            string sizeStr = sizeMb.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
-                            // write concise log line (use file name only for readability)
-                            AppendLogForBase(outputFileWithNumber, $"EXPORT | {Path.GetFileName(outputFileWithNumber)} | OK | {durationStr} min | {sizeStr} MB");
+                            // call structured message: OP|DURATION_MS|STATUS|EXTRA
+                            string structured = $"EXPORT|{durationMs.ToString(System.Globalization.CultureInfo.InvariantCulture)}|OK|";
+                            int sites = e3DDBElementCollection.AllSitesAibel?.Count ?? 0;
+                            AppendLogForBase(outputFileWithNumber, structured, sites);
 
                         }
                         catch (Exception ex)
                         {
                             var exportEnd = DateTime.UtcNow;
-
-                            // minutes with 2 decimals
-                            double durationMinutes = (exportEnd - exportStart).TotalMilliseconds / 60000.0;
-                            string durationStr = durationMinutes.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-                            // size in MB with 2 decimals
-                            double sizeMb = File.Exists(outputFileWithNumber) ? new FileInfo(outputFileWithNumber).Length / 1024.0 / 1024.0 : 0.0;
-                            string sizeStr = sizeMb.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-                            // Log an ERROR entry (include exception message for diagnostics)
-                            AppendLogForBase(outputFileWithNumber,$"EXPORT | {Path.GetFileName(outputFileWithNumber)} | ERROR | {durationStr} min | {sizeStr} MB | {ex.Message}");
-
+                            double durationMs = (exportEnd - exportStart).TotalMilliseconds;
+                            string structured = $"EXPORT|{durationMs.ToString(System.Globalization.CultureInfo.InvariantCulture)}|ERROR|{ex.Message}";
+                            int sites = e3DDBElementCollection.AllSitesAibel?.Count ?? 0;
+                            AppendLogForBase(outputFileWithNumber, structured, sites);
                             throw;
                         }
                     }
@@ -553,15 +541,11 @@ namespace AiPdms.Navis.Utilities
                 File.Delete(tmpDest);
 
                 var mergeEnd = DateTime.UtcNow;
-                double mergeMinutes = (mergeEnd - mergeStart).TotalMilliseconds / 60000.0;
-                string mergeMinutesStr = mergeMinutes.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+                double mergeMs = (mergeEnd - mergeStart).TotalMilliseconds;
+                string structured = $"MERGE|{mergeMs.ToString(System.Globalization.CultureInfo.InvariantCulture)}|OK|";
+                int sitesCountIfKnown = -1; // hvis du har et sites-tall fra eksport, send det; ellers -1
+                AppendLogForBase(destinationFile, structured, sitesCountIfKnown);
 
-                // destination size in MB with 2 decimals
-                double destSizeMb = File.Exists(destinationFile) ? new FileInfo(destinationFile).Length / 1024.0 / 1024.0 : 0.0;
-                string destSizeStr = destSizeMb.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-                // Log: MERGE | filename | OK | 1.23 min | 12.34 MB
-                AppendLogForBase(destinationFile, $"MERGE | {Path.GetFileName(destinationFile)} | OK | {mergeMinutesStr} min | {destSizeStr} MB");
 
 
                 Console.WriteLine("All files appended into " + destinationFile);
@@ -580,10 +564,9 @@ namespace AiPdms.Navis.Utilities
             catch (Exception ex)
             {
                 var errorTime = DateTime.UtcNow;
-                double errorMinutes = (errorTime - mergeStart).TotalMilliseconds / 60000.0;
-                string errorMinutesStr = errorMinutes.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-                AppendLogForBase(destinationFile, $"MERGE | {Path.GetFileName(destinationFile)} | ERROR | {errorMinutesStr} min | {ex.Message}");
+                double errorMs = (errorTime - mergeStart).TotalMilliseconds;
+                string structured = $"MERGE|{errorMs.ToString(System.Globalization.CultureInfo.InvariantCulture)}|ERROR|{ex.Message}";
+                AppendLogForBase(destinationFile, structured, -1);
                 Console.WriteLine("An error occurred in MergeAndManipulateFiles: " + ex.Message);
                 try { if (File.Exists(tmpDest)) File.Delete(tmpDest); } catch { }
             }
@@ -651,10 +634,11 @@ namespace AiPdms.Navis.Utilities
             return (line ?? "").TrimEnd() + "'";
         }
 
+        // put this inside AiPdmsNavisUtilities class (replaces existing AppendLogForBase)
         private static readonly object _logLock = new object();
 
         [PMLNetCallable()]
-        public void AppendLogForBase(string baseFilePath, string message)
+        public void AppendLogForBase(string baseFilePath, string message, int siteCount = -1)
         {
             try
             {
@@ -668,20 +652,77 @@ namespace AiPdms.Navis.Utilities
                 if (!Directory.Exists(logDir))
                     Directory.CreateDirectory(logDir);
 
-                // FIX: use single shared log filename
+                // Use a single consolidated logfile name
                 string logFile = Path.Combine(logDir, "ModelExportAttributes_log.txt");
 
+                // If message is structured (OP|DURATION_MS|STATUS|EXTRA) keep backward compat
                 string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture);
-                string line = $"{timestamp} | {message}{Environment.NewLine}";
 
-                lock (_logLock) // prevent concurrent write interleaving
-                    File.AppendAllText(logFile, line, Encoding.UTF8);
+                string line;
+                if (!string.IsNullOrEmpty(message) && message.Contains("|"))
+                {
+                    // old structured message parsing: parts = OP|DURATION_MS|STATUS|EXTRA (optional)
+                    var parts = message.Split(new[] { '|' }, 4);
+                    string operation = parts.Length > 0 ? parts[0].Trim() : "";
+                    double durationMs = 0;
+                    double minutesVal = 0.0;
+                    if (parts.Length > 1 && double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out durationMs))
+                    {
+                        minutesVal = durationMs / 60000.0;
+                    }
+                    string minutesStr = minutesVal.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + " min";
+
+                    string status = parts.Length > 2 ? parts[2].Trim() : "";
+                    string extra = parts.Length > 3 ? parts[3].Trim() : "";
+
+                    // file size in MB
+                    double mb = File.Exists(baseFilePath) ? new FileInfo(baseFilePath).Length / 1024.0 / 1024.0 : 0.0;
+                    string mbStr = mb.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + " MB";
+
+                    // build tab-separated fields
+                    // Timestamp \t Operation \t Filename \t Status \t Duration \t Size \t SiteCount(optional) \t Extra
+                    var fields = new List<string>
+            {
+                timestamp,
+                operation,
+                Path.GetFileName(baseFilePath),
+                status,
+                minutesStr,
+                mbStr
+            };
+                    if (siteCount >= 0) fields.Add(siteCount.ToString());
+                    if (!string.IsNullOrEmpty(extra)) fields.Add(extra);
+
+                    line = string.Join("\t", fields);
+                }
+                else
+                {
+                    // raw message fallback -> still use a tab at start for consistent columns
+                    var fields = new List<string>
+            {
+                timestamp,
+                "MSG",
+                Path.GetFileName(baseFilePath),
+                "-", // status unknown
+                "-", // duration unknown
+                "-", // size unknown
+            };
+                    if (siteCount >= 0) fields.Add(siteCount.ToString());
+                    fields.Add(message);
+
+                    line = string.Join("\t", fields);
+                }
+
+                lock (_logLock)
+                    File.AppendAllText(logFile, line + Environment.NewLine, Encoding.UTF8);
             }
             catch
             {
-                // ignore logging errors
+                // never throw from logger
             }
         }
+
+
 
 
 
