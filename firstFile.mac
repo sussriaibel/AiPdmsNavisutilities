@@ -1,0 +1,12 @@
+import 'AiPdmsNavisUtilities'
+handle (1000,0)
+endhandle
+ 
+using NameSpace 'AiPdms.Navis.Utilities'
+!main = object AiPdmsNavisUtilities()
+
+var !sites1 coll all site where purp eq 'TEL' or purp eq 'STL' or purp eq 'INS' or purp eq 'ARC'  
+
+!main.ExportNavisAttributesForSelectedDiscipline('%aveva_design_dflts%\ModelExportNavisAttributesTotal.pmldat',%adm%\Batch\ModelExport\Temp\MainModelExport_testonly.txt',!sites1,1) 
+
+endmacro

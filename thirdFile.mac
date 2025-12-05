@@ -1,0 +1,13 @@
+import 'AiPdmsNavisUtilities'
+handle (1000,0)
+endhandle
+ 
+using NameSpace 'AiPdms.Navis.Utilities'
+!main = object AiPdmsNavisUtilities()
+
+var !sites3 coll all site where purp eq 'ELE' or purp eq 'GEN' or purp eq 'GRID' or purp eq 'MEC'   
+
+!main.ExportNavisAttributesForSelectedDiscipline('%aveva_design_dflts%\ModelExportNavisAttributesTotal.pmldat',%adm%\Batch\ModelExport\Temp\MainModelExport_testonly.txt,!sites3,3) 
+
+endmacro
+---$m C:\AibelProgs\github\aipdms_r310\AiPdmsNavisUtilities\thirdFile.mac 'M:\MswR310\Dflts\Gene\ModelExportNavisAttributesTotal.pmldat' 'C:\TEMP\AttributeExport\MainModelExport.txt'

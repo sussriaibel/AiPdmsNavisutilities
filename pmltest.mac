@@ -1,0 +1,30 @@
+import 'AiPdmsNavisUtilities'
+
+handle (1000,0)
+endhandle
+
+using NameSpace 'AiPdms.Navis.Utilities'
+
+!main = object AiPdmsNavisUtilities()
+
+!adm = !!evar('adm')
+
+!tempdir   = 'P:\R310\MEL\Adm\Batch\ModelExport\Temp\'
+!basefile  = !tempdir + 'ModelExportAttributes.txt'
+!destfile  = !basefile
+!fileCount = 3   
+
+$P Starter merge av attributtfiler...
+q var !tempdir
+q var !basefile
+q var !fileCount
+
+!main.MergeAndManipulateFiles(!basefile, !destfile, $!fileCount)
+
+$P Ferdig med MergeAndManipulateFiles
+$P Sluttfil: $!destfile
+
+Finish
+
+
+--$m C:\Aibelprogs\AiPdmsNavisUtilities_scom\pmltest.mac
