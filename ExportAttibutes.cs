@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using Aveva.Core.Database;
 using Aveva.Core.Database.Filters;
 using Ps = Aveva.Core.Database.DbPseudoAttribute;
+using System.Runtime.ExceptionServices;
+using System.Security;
 
 namespace AiPdms.Navis.Utilities
 {
@@ -52,6 +54,7 @@ namespace AiPdms.Navis.Utilities
             this.PmlOneExPressionElementProp.Add("SFREF", DbExpression.Parse("flnn of owner of sfref"));
             this.PmlOneExPressionElementProp.Add(":prefabtask", DbExpression.Parse(":prefabtask of owner of sfref"));
             this.PmlOneExPressionElementProp.Add(":workordno", DbExpression.Parse(":WorkOrdNo of supref"));
+            this.PmlOneExPressionElementProp.Add("OWNE", DbExpression.Parse("OWNE"));
         }
         
         /// <summary>
@@ -59,6 +62,8 @@ namespace AiPdms.Navis.Utilities
         /// </summary>
         /// <param name="dbElements"></param>
         /// <param name="attribLibrary"></param>
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         public void WriteAttributeToTextFile(List<DbElement> dbElements, AttribLibrary attribLibrary)
         {
            
@@ -76,7 +81,7 @@ namespace AiPdms.Navis.Utilities
                 int siteCount = 1;             
                 foreach (DbElement dbelement in dbElements)
                 {
-                    if (dbelement.IsValid && !dbelement.IsNull && !dbelement.IsDeleted && dbelement != null)
+                    if (dbelement != null && dbelement.IsValid && !dbelement.IsNull && !dbelement.IsDeleted)
                     {
                         // && site.Members().Length != 0
 
@@ -109,8 +114,9 @@ namespace AiPdms.Navis.Utilities
                             foreach (DbElement item in elementCollection.dbElementCollection)
                             {
                                 //Console.WriteLine(item.Name());
-
-                                if (item.IsValid && !item.IsNull && !item.IsDeleted && item != null)
+                                try
+                                { 
+                                if (item != null && item.IsValid && !item.IsNull && !item.IsDeleted)
                                 {
                                     string itemName = item.FullName();
                                     string typeCurrentElement = item.GetAsString(elementType);
@@ -325,6 +331,19 @@ namespace AiPdms.Navis.Utilities
 
                                 //    LinesToWrite.Clear();
                                 //}
+                                }
+                                catch (AccessViolationException ex)
+                                {
+                                    Console.WriteLine("Skipping corrupt E3D element because AccessViolationException occurred.");
+                                    Console.WriteLine(ex.Message);
+                                    continue;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("Skipping E3D element because error occurred.");
+                                    Console.WriteLine(ex.Message);
+                                    continue;
+                                }
 
                             }//foreach end
                         }
@@ -336,8 +355,15 @@ namespace AiPdms.Navis.Utilities
 
                         if (lastElementDepth > siteDepth)
                         {
-
-                            TextFileWriter(lastElement, attribLibrary.FloorAttrib, lastElementDepth, siteDepth);
+                            try
+                            {
+                                TextFileWriter(lastElement, attribLibrary.FloorAttrib, lastElementDepth, siteDepth);
+                            }
+                            catch (AccessViolationException ex)
+                            {
+                                Console.WriteLine("Skipping final lastElement because AccessViolationException occurred.");
+                                Console.WriteLine(ex.Message);
+                            }
                         }
 
                         lastElement = null;
@@ -434,8 +460,17 @@ namespace AiPdms.Navis.Utilities
         /// <param name="attributes"></param>
         /// <param name="ceDepth"></param>
         /// <param name="ceSiteDepth"></param>
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         private void TextFileWriter(DbElement dbElement, List<string> attributes, int ceDepth, int ceSiteDepth)
-        {
+        {   
+            try
+            {
+
+            if (dbElement == null || !dbElement.IsValid || dbElement.IsNull || dbElement.IsDeleted)
+            {
+               return;
+            }
             var purpose = "";
             
             if (dbElement.ElementType == DbElementTypeInstance.SITE)
@@ -446,10 +481,8 @@ namespace AiPdms.Navis.Utilities
             {
                 purpose = dbElement.GetElementArray(DbAttributeInstance.OWNLST)[0].GetAsString(DbAttributeInstance.PURP);
             }
-
-
-            try
-            {
+            
+            
                 if (!reachedLastElement)
                 {
 
@@ -656,9 +689,6 @@ namespace AiPdms.Navis.Utilities
                                             catch (Exception)
                                             {
 
-
-
-
                                                 InvalidAttribures.Add(attribute);
 
                                             }
@@ -701,11 +731,17 @@ namespace AiPdms.Navis.Utilities
 
                 }
             }
+            catch (AccessViolationException ex2)
+            {
+                Console.WriteLine("AccessViolationException in TextFileWriter. Skipping this element.");
+                Console.WriteLine(ex2.Message);
+                throw;
+            }
             catch (Exception ex2)
             {
-
                 Console.WriteLine(ex2);
             }
+
 
 
 

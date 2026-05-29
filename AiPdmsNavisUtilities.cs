@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Runtime.ExceptionServices;
+using System.Security;
 
 namespace AiPdms.Navis.Utilities
 {
@@ -36,6 +38,8 @@ namespace AiPdms.Navis.Utilities
 
 		}
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
 		[PMLNetCallable()]
 		public void ExportNavisAttributes(string pmlDataPath, string outputFile)
 		{
@@ -77,6 +81,8 @@ namespace AiPdms.Navis.Utilities
   
         }//method ExportNavisAttributes
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         [PMLNetCallable()]
         public void ExportNavisAttributes(string pmlDataPath, string outputFile, Hashtable inputArray, bool exportAll)
         {
@@ -333,17 +339,23 @@ namespace AiPdms.Navis.Utilities
         /// </summary>
         /// <param name="siteCollection"></param>
         /// <param name="attribLibrary"></param>
-
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]     
         public void ExportAttribute(List<DbElement> siteCollection, AttribLibrary attribLibrary, string exportPath)
         {
-
             try
             {
                 exportAttibutes = new ExportAttibutes
                 {
                     FileWritePath = exportPath
                 };
+
                 exportAttibutes.WriteAttributeToTextFile(siteCollection, attribLibrary);
+            }
+            catch (AccessViolationException ex)
+            {
+                Console.WriteLine("AccessViolationException in ExportAttribute. Export stopped safely.");
+                Console.WriteLine(ex);
             }
             catch (Exception ex2)
             {
@@ -354,10 +366,10 @@ namespace AiPdms.Navis.Utilities
                 exportAttibutes = null;
                 GC.Collect();
             }
-           
-
         }
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         [PMLNetCallable()]
         public void MergeAndManipulateFiles(string baseFileName, string destinationFile, double fileCountDouble)
         {
