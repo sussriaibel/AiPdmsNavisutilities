@@ -48,6 +48,27 @@ namespace AiPdms.Navis.Utilities
         //Dictionary to store pml 1 expression
         public Dictionary<string, DbExpression> PmlOneExPressionElementProp = new Dictionary<string, DbExpression>();
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
+        private bool TryEvaluate(DbElement el, DbExpression expr, out string result)
+        {
+            result = "";
+            try
+            {
+                if (el == null || !el.IsValid || el.IsNull || el.IsDeleted) return false;
+                result = el.EvaluateAsString(expr);
+                return true;
+            }
+            catch (AccessViolationException ex)
+            {
+                Console.WriteLine("Skipping expression (AVE): " + ex.Message);
+                return false;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
         public ExportAttibutes()
         {
             this.PmlOneExPressionElementProp.Add("Sequence", DbExpression.Parse("Sequence"));
@@ -57,6 +78,7 @@ namespace AiPdms.Navis.Utilities
             this.PmlOneExPressionElementProp.Add("OWNE", DbExpression.Parse("OWNE"));
         }
         
+
         /// <summary>
         /// 
         /// </summary>
@@ -111,7 +133,17 @@ namespace AiPdms.Navis.Utilities
                         {
                             DbAttribute elementType = DbAttribute.GetDbAttribute("Type");
 
-                            foreach (DbElement item in elementCollection.dbElementCollection)
+                            // Read the live DB cursor fully into a list BEFORE doing any
+                            // per-element work. This stops the nested DBElementCollection
+                            // enumerations in GetTubeSequence() and CabelLaderSegmentUpdater()
+                            // from corrupting this parent cursor mid-iteration.
+                            List<DbElement> snapshot = new List<DbElement>();
+                            foreach (DbElement snapItem in elementCollection.dbElementCollection)
+                            {
+                                snapshot.Add(snapItem);
+                            }
+
+                            foreach (DbElement item in snapshot)
                             {
                                 //Console.WriteLine(item.Name());
                                 try
@@ -119,6 +151,7 @@ namespace AiPdms.Navis.Utilities
                                 if (item != null && item.IsValid && !item.IsNull && !item.IsDeleted)
                                 {
                                     string itemName = item.FullName();
+                                    WriteBreadcrumb(itemName);
                                     string typeCurrentElement = item.GetAsString(elementType);
                                     //if (typeCurrentElement == "TUBI")
                                     //{
@@ -453,6 +486,21 @@ namespace AiPdms.Navis.Utilities
             return tubes;
         }
 
+
+        private static readonly object _bcLock = new object();
+
+        private void WriteBreadcrumb(string identifier)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(FileWritePath)) return;
+                // Overwrites each time, so the file always holds ONLY the element
+                // currently being read. After a hard crash, this is your culprit.
+                lock (_bcLock)
+                    File.WriteAllText(FileWritePath + ".cur", identifier + Environment.NewLine);
+            }
+            catch { }
+        }
         /// <summary>
         /// 
         /// </summary>
@@ -680,17 +728,14 @@ namespace AiPdms.Navis.Utilities
                                         {
                                             string currentAttribute = "";
 
-                                            try
+                                            if (!this.PmlOneExPressionElementProp.ContainsKey(attriSplit[1].Trim()))
                                             {
                                                 this.PmlOneExPressionElementProp.Add(attriSplit[1].Trim(), DbExpression.Parse(attriSplit[1].Trim()));
-
-                                                currentAttribute = dbElement.EvaluateAsString(this.PmlOneExPressionElementProp[attriSplit[1].Trim()]);
                                             }
-                                            catch (Exception)
+
+                                            if (!TryEvaluate(dbElement, this.PmlOneExPressionElementProp[attriSplit[1].Trim()], out currentAttribute))
                                             {
-
                                                 InvalidAttribures.Add(attribute);
-
                                             }
 
                                             if (attriSplit[1].Trim() == "NAME")

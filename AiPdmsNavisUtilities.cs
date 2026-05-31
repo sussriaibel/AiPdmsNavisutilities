@@ -74,8 +74,7 @@ namespace AiPdms.Navis.Utilities
                 pMLDataReader = null;
 
                 e3DDBElementCollection = null;
-
-                GC.Collect();
+                
                 
             }
   
@@ -146,8 +145,6 @@ namespace AiPdms.Navis.Utilities
 
                 e3DDBElementCollection = null;
 
-                GC.Collect();
-
             }
 
         }//method ExportNavisAttributes
@@ -216,14 +213,15 @@ namespace AiPdms.Navis.Utilities
                 pMLDataReader = null;
 
                 e3DDBElementCollection = null;
-
-                GC.Collect();
+           
 
             }
 
 
         }//method ExportNavisAttributesForSelected
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         [PMLNetCallable()]
         public void ExportNavisAttributesForSelectedDiscipline(string pmlDataPath, string outputFile, Hashtable elements, double appendNumber)
         {
@@ -249,6 +247,9 @@ namespace AiPdms.Navis.Utilities
 
                     foreach (DictionaryEntry item in elements)
                     {
+                        try
+                        {
+
                         DbElement elementToList = DbElement.GetElement(Convert.ToString(item.Value).Trim());
                         if (elementToList.IsValid && !elementToList.IsNull)
                         {
@@ -257,6 +258,19 @@ namespace AiPdms.Navis.Utilities
                         else
                         {
                             Console.WriteLine(item.Value + " is not a valid element");
+                        }
+                        }
+                        catch (AccessViolationException ex)
+                        {
+                            Console.WriteLine("Skipping selected discipline element because AccessViolationException occurred.");
+                            Console.WriteLine(ex.Message);
+                            continue;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("Skipping selected discipline element because error occurred.");
+                            Console.WriteLine(ex.Message);
+                            continue;
                         }
                     }
 
@@ -304,8 +318,6 @@ namespace AiPdms.Navis.Utilities
                 pMLDataReader = null;
 
                 e3DDBElementCollection = null;
-
-                GC.Collect();
 
             }
 
@@ -363,8 +375,7 @@ namespace AiPdms.Navis.Utilities
             }
             finally
             {
-                exportAttibutes = null;
-                GC.Collect();
+                exportAttibutes = null;           
             }
         }
 
