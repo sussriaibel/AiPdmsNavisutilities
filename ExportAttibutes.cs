@@ -77,7 +77,48 @@ namespace AiPdms.Navis.Utilities
             this.PmlOneExPressionElementProp.Add(":workordno", DbExpression.Parse(":WorkOrdNo of supref"));
             this.PmlOneExPressionElementProp.Add("OWNE", DbExpression.Parse("OWNE"));
         }
-        
+
+        private string GetPurposeSafe(DbElement element)
+        {
+            try
+            {
+                if (element == null || !element.IsValid || element.IsNull || element.IsDeleted)
+                    return "";
+
+                DbAttribute purposeAttr = DbAttribute.GetDbAttribute("Purpose");
+
+                if (element.ElementType == DbElementTypeInstance.SITE)
+                {
+                    if (element.IsAttributeValid(purposeAttr))
+                        return element.GetAsString(purposeAttr);
+
+                    return "";
+                }
+
+                var owners = element.GetElementArray(DbAttributeInstance.OWNLST);
+
+                if (owners == null || owners.Length == 0)
+                {
+                    Console.WriteLine("No OWNLST found for: " + element.FullName());
+                    return "";
+                }
+
+                DbElement topOwner = owners[0];
+
+                if (topOwner == null || !topOwner.IsValid || topOwner.IsNull || topOwner.IsDeleted)
+                    return "";
+
+                if (topOwner.IsAttributeValid(purposeAttr))
+                    return topOwner.GetAsString(purposeAttr);
+
+                return "";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not get purpose for element: " + ex.Message);
+                return "";
+            }
+        }
 
         /// <summary>
         /// 
@@ -100,7 +141,11 @@ namespace AiPdms.Navis.Utilities
                 Console.WriteLine();
                 Console.WriteLine("Export attributes started");
                 Console.WriteLine("Total AibelSites = " + dbElements.Count);
-                int siteCount = 1;             
+                int siteCount = 1;
+
+                // Compute ONCE - never changes per element.
+                var exportElementTypes = attribLibrary.TypeOfElementsToExport.Distinct().ToList();
+
                 foreach (DbElement dbelement in dbElements)
                 {
                     if (dbelement != null && dbelement.IsValid && !dbelement.IsNull && !dbelement.IsDeleted)
@@ -113,23 +158,15 @@ namespace AiPdms.Navis.Utilities
                         Console.WriteLine("Exporting attributes for site no. " + siteCount + " of " + dbElements.Count + " " + dbelement.FullName() + " started");
              
                         int siteDepth = Convert.ToInt32(dbelement.GetAsString(DbAttribute.GetDbAttribute("DDEPTH")));
-                        string sitePurposeString = "";
-                        if(dbelement.ElementType == DbElementTypeInstance.SITE)
-                        {
-                            sitePurposeString = dbelement.GetAsString(DbAttribute.GetDbAttribute("Purpose"));
-                        }
-                        else
-                        {
-                            sitePurposeString = dbelement.GetElementArray(DbAttributeInstance.OWNLST)[0].GetAsString(DbAttribute.GetDbAttribute("Purpose"));
-                        }
-                        
+                        string sitePurposeString = GetPurposeSafe(dbelement);
+
 
                         //DBElementCollection elementFromSites = new DBElementCollection(site)
                         //{
                         //    IncludeRoot = true
                         //};
 
-                        using (E3DDBElementCollection elementCollection = new E3DDBElementCollection(dbelement))
+                        using (E3DDBElementCollection elementCollection = new E3DDBElementCollection(dbelement, attribLibrary.TypeOfElementsToExport))
                         {
                             DbAttribute elementType = DbAttribute.GetDbAttribute("Type");
 
@@ -138,9 +175,17 @@ namespace AiPdms.Navis.Utilities
                             // enumerations in GetTubeSequence() and CabelLaderSegmentUpdater()
                             // from corrupting this parent cursor mid-iteration.
                             List<DbElement> snapshot = new List<DbElement>();
-                            foreach (DbElement snapItem in elementCollection.dbElementCollection)
+                            try
                             {
-                                snapshot.Add(snapItem);
+                                foreach (DbElement snapItem in elementCollection.dbElementCollection)
+                                {
+                                    snapshot.Add(snapItem);
+                                }
+                            }
+                            catch (Exception exEnum)
+                            {
+                                Console.WriteLine("Enumeration stopped early for this site: " + exEnum.Message);
+                                // proceed with whatever was collected so the file still gets written
                             }
 
                             foreach (DbElement item in snapshot)
@@ -150,22 +195,34 @@ namespace AiPdms.Navis.Utilities
                                 { 
                                 if (item != null && item.IsValid && !item.IsNull && !item.IsDeleted)
                                 {
-                                    string itemName = item.FullName();
-                                    WriteBreadcrumb(itemName);
-                                    string typeCurrentElement = item.GetAsString(elementType);
-                                    //if (typeCurrentElement == "TUBI")
-                                    //{
-                                    //    continue;
-                                        
-                                    //}
-                                    string typeOwnerElement = item.Owner.GetAsString(elementType);
-                                    var exportElementTypes = attribLibrary.TypeOfElementsToExport.Distinct().ToList();
-                                    var matchElementCurrent = exportElementTypes.FirstOrDefault(stringToCheck => stringToCheck.Contains(typeCurrentElement));
-                                    var matchElementOwner = exportElementTypes.FirstOrDefault(stringToCheck => stringToCheck.Contains(typeOwnerElement));
+                                        string typeCurrentElement = item.GetAsString(elementType);
 
-                                    if ((matchElementCurrent != null) || (matchElementOwner != null))
-                                    {
-                                        if (typeCurrentElement == "SITE") //SITE
+                                        string typeOwnerElement = "";
+                                        try
+                                        {
+                                            if (item.Owner != null && item.Owner.IsValid && !item.Owner.IsNull && !item.Owner.IsDeleted)
+                                            {
+                                                typeOwnerElement = item.Owner.GetAsString(elementType);
+                                            }
+                                        }
+                                        catch
+                                        {
+                                            typeOwnerElement = "";
+                                        }
+
+                                        var matchElementCurrent = !string.IsNullOrWhiteSpace(typeCurrentElement)
+                                            ? exportElementTypes.FirstOrDefault(stringToCheck =>
+                                                !string.IsNullOrWhiteSpace(stringToCheck) && stringToCheck.Contains(typeCurrentElement))
+                                            : null;
+
+                                        var matchElementOwner = !string.IsNullOrWhiteSpace(typeOwnerElement)
+                                            ? exportElementTypes.FirstOrDefault(stringToCheck =>
+                                                !string.IsNullOrWhiteSpace(stringToCheck) && stringToCheck.Contains(typeOwnerElement))
+                                            : null;
+
+                                        {
+                                        
+                                            if (typeCurrentElement == "SITE") //SITE
                                         {
                                             currentElementDepth = Convert.ToInt32(item.GetAsString(DbAttribute.GetDbAttribute("DDEPTH")));
                                             TextFileWriter(item, attribLibrary.SiteAttrib, currentElementDepth, siteDepth);
@@ -380,23 +437,29 @@ namespace AiPdms.Navis.Utilities
 
                             }//foreach end
                         }
+
                         reachedLastElement = true;
 
-                        int lastElementDepth = currentElementDepth;
-
-
-
-                        if (lastElementDepth > siteDepth)
+                        if (lastElement != null)
                         {
-                            try
+                            int lastElementDepth = currentElementDepth;
+
+                            if (lastElementDepth > siteDepth)
                             {
-                                TextFileWriter(lastElement, attribLibrary.FloorAttrib, lastElementDepth, siteDepth);
+                                try
+                                {
+                                    TextFileWriter(lastElement, attribLibrary.FloorAttrib, lastElementDepth, siteDepth);
+                                }
+                                catch (AccessViolationException ex)
+                                {
+                                    Console.WriteLine("Skipping final lastElement because AccessViolationException occurred.");
+                                    Console.WriteLine(ex.Message);
+                                }
                             }
-                            catch (AccessViolationException ex)
-                            {
-                                Console.WriteLine("Skipping final lastElement because AccessViolationException occurred.");
-                                Console.WriteLine(ex.Message);
-                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("No exportable elements found under: " + dbelement.FullName());
                         }
 
                         lastElement = null;
@@ -439,7 +502,7 @@ namespace AiPdms.Navis.Utilities
                 stopwatch.Stop();
                 var elapsed_time = stopwatch.Elapsed.TotalHours;
                 Console.WriteLine("Total elapsed Hours = " + elapsed_time.ToString());
-                Console.WriteLine("Merging Files , DO NOT CLOSE !");
+                Console.WriteLine("DO NOT CLOSE !");
 
             }
             catch (Exception ex1)
@@ -487,20 +550,6 @@ namespace AiPdms.Navis.Utilities
         }
 
 
-        private static readonly object _bcLock = new object();
-
-        private void WriteBreadcrumb(string identifier)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(FileWritePath)) return;
-                // Overwrites each time, so the file always holds ONLY the element
-                // currently being read. After a hard crash, this is your culprit.
-                lock (_bcLock)
-                    File.WriteAllText(FileWritePath + ".cur", identifier + Environment.NewLine);
-            }
-            catch { }
-        }
         /// <summary>
         /// 
         /// </summary>
@@ -519,18 +568,9 @@ namespace AiPdms.Navis.Utilities
             {
                return;
             }
-            var purpose = "";
-            
-            if (dbElement.ElementType == DbElementTypeInstance.SITE)
-            {
-                purpose = dbElement.GetAsString(DbAttributeInstance.PURP);
-            }
-            else
-            {
-                purpose = dbElement.GetElementArray(DbAttributeInstance.OWNLST)[0].GetAsString(DbAttributeInstance.PURP);
-            }
-            
-            
+            var purpose = GetPurposeSafe(dbElement);
+
+
                 if (!reachedLastElement)
                 {
 
@@ -662,7 +702,7 @@ namespace AiPdms.Navis.Utilities
                                             }
 
                                         }
-                                        MatchCollection matches = Regex.Matches(currentAttributePmlOne, "^(.+)$", RegexOptions.Multiline);
+                                        //MatchCollection matches = Regex.Matches(currentAttributePmlOne, "^(.+)$", RegexOptions.Multiline);
 
                                         var singleLine = currentAttributePmlOne.Replace("\n", " ");
 
@@ -711,7 +751,7 @@ namespace AiPdms.Navis.Utilities
                                                     }
 
                                                 }
-                                                MatchCollection matches = Regex.Matches(currentAttribute, "^(.+)$", RegexOptions.Multiline);
+                                                //MatchCollection matches = Regex.Matches(currentAttribute, "^(.+)$", RegexOptions.Multiline);
 
                                                 var singleLine = currentAttribute.Replace("\n", " ");
 
@@ -746,7 +786,7 @@ namespace AiPdms.Navis.Utilities
                                                 }
 
                                             }
-                                            MatchCollection matches = Regex.Matches(currentAttribute, "^(.+)$", RegexOptions.Multiline);
+                                            //MatchCollection matches = Regex.Matches(currentAttribute, "^(.+)$", RegexOptions.Multiline);
 
                                             var singleLine = currentAttribute.Replace("\n", " ");
 
@@ -835,7 +875,7 @@ namespace AiPdms.Navis.Utilities
                 return GetPrefabTaskAndSfrefHanger(finalHanger);
             }
 
-            return new object[2];
+            return isoInfo;
         }
 
         private object[] GetPrefabTaskAndSfrefHanger(DbElement finalHanger)

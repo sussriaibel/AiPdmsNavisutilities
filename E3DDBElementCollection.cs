@@ -24,10 +24,11 @@ namespace AiPdms.Navis.Utilities
             this.PurposeList = purposeList;
         }
 
-        public E3DDBElementCollection(DbElement site)
+        public E3DDBElementCollection(DbElement site, List<string> exportTypes)
         {
             dbElementCollection = new DBElementCollection(site)
             {
+                Filter = new ExportScanFilter(exportTypes),
                 IncludeRoot = true
             };
         }

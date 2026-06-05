@@ -24,6 +24,7 @@ namespace AiPdms.Navis.Utilities
         ExportAttibutes exportAttibutes;
 
         private const int FileBufferSize = 64 * 1024; // 64KB
+        private string _parsedPmlPath = null;
 
         [PMLNetCallable()]
 		public AiPdmsNavisUtilities()
@@ -236,11 +237,13 @@ namespace AiPdms.Navis.Utilities
                     File.Delete(outputFileWithNumber);
                 }
 
-                attribLibrary = new AttribLibrary();
-
-                pMLDataReader = new PMLDataReader();
-
-                var listCollection = pMLDataReader.CollectAttribute(pmlDataPath, attribLibrary);
+                if (attribLibrary == null || _parsedPmlPath != pmlDataPath)
+                {
+                    attribLibrary = new AttribLibrary();
+                    pMLDataReader = new PMLDataReader();
+                    pMLDataReader.CollectAttribute(pmlDataPath, attribLibrary);
+                    _parsedPmlPath = pmlDataPath;
+                }
 
                 using (var e3DDBElementCollection = new E3DDBElementCollection())
                 {
@@ -313,9 +316,6 @@ namespace AiPdms.Navis.Utilities
             }
             finally
             {
-                attribLibrary = null;
-
-                pMLDataReader = null;
 
                 e3DDBElementCollection = null;
 
