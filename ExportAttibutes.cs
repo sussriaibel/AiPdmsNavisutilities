@@ -39,7 +39,7 @@ namespace AiPdms.Navis.Utilities
 
         public List<string> LinesToWrite { get; set; } = new List<string>();
 
-        public List<string> InvalidAttribures { get; set; } = new List<string>();
+        public HashSet<string> InvalidAttribures { get; set; } = new HashSet<string>();
 
         public Dictionary<string, int> BranchTubeSequenceDictionary { get; set; } = new Dictionary<string, int>();
 
@@ -219,7 +219,8 @@ namespace AiPdms.Navis.Utilities
                                             ? exportElementTypes.FirstOrDefault(stringToCheck =>
                                                 !string.IsNullOrWhiteSpace(stringToCheck) && stringToCheck.Contains(typeOwnerElement))
                                             : null;
-
+                                        
+                                        if ((matchElementCurrent != null) || (matchElementOwner != null))
                                         {
                                         
                                             if (typeCurrentElement == "SITE") //SITE
@@ -408,19 +409,19 @@ namespace AiPdms.Navis.Utilities
 
                                 }
 
-                                //if (LinesToWrite.Count >= 50000)
-                                //{
-                                //    using (StreamWriter file = new System.IO.StreamWriter(FileWritePath, true))
-                                //    {
-                                //        foreach (var itemLine in LinesToWrite)
-                                //        {
-                                //            file.WriteLine(itemLine);
-                                //        }
+                                if (LinesToWrite.Count >= 20000)
+                                {
+                                    using (StreamWriter file = new System.IO.StreamWriter(FileWritePath, true))
+                                    {
+                                        foreach (var itemLine in LinesToWrite)
+                                        {
+                                            file.WriteLine(itemLine);
+                                        }
 
-                                //    }
+                                    }
 
-                                //    LinesToWrite.Clear();
-                                //}
+                                    LinesToWrite.Clear();
+                                }
                                 }
                                 catch (AccessViolationException ex)
                                 {
